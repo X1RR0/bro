@@ -1,0 +1,900 @@
+<!DOCTYPE html>
+<html lang="uk">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Інтерактивна карта областей України — X1RR0</title>
+    <link rel="stylesheet" href="https://unpkg.com" />
+    <style>
+        * {
+            box-sizing: border-box;
+            margin: 0;
+            padding: 0;
+            font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
+        }
+        body {
+            background-color: #0f172a;
+            color: #f8fafc;
+            display: flex;
+            flex-direction: column;
+            min-height: 100vh;
+        }
+        header {
+            background-color: #1e293b;
+            padding: 15px 20px;
+            text-align: center;
+            border-bottom: 1px solid #334155;
+        }
+        header h1 {
+            font-size: 1.4rem;
+            margin-bottom: 5px;
+        }
+        header p {
+            font-size: 0.9rem;
+            color: #94a3b8;
+        }
+        .controls {
+            display: flex;
+            flex-wrap: wrap;
+            justify-content: center;
+            align-items: center;
+            gap: 10px;
+            padding: 12px;
+            background-color: #1e293b;
+            border-bottom: 1px solid #334155;
+        }
+        .color-btn {
+            width: 32px;
+            height: 32px;
+            border-radius: 50%;
+            border: 3px solid transparent;
+            cursor: pointer;
+            transition: transform 0.15s;
+        }
+        .color-btn.active {
+            border-color: #ffffff;
+            transform: scale(1.15);
+        }
+        .action-btn {
+            padding: 8px 14px;
+            border: none;
+            border-radius: 8px;
+            background-color: #334155;
+            color: #f8fafc;
+            font-size: 0.85rem;
+            cursor: pointer;
+        }
+        .action-btn:hover {
+            background-color: #475569;
+        }
+        #map-container {
+            flex: 1;
+            position: relative;
+            width: 100%;
+            min-height: 500px;
+        }
+        #map {
+            width: 100%;
+            height: 100%;
+            min-height: 500px;
+            background-color: #0f172a;
+        }
+        #info-panel {
+            position: absolute;
+            bottom: 20px;
+            left: 50%;
+            transform: translateX(-50%);
+            z-index: 1000;
+            background: rgba(30, 41, 59, 0.92);
+            padding: 10px 18px;
+            border-radius: 12px;
+            border: 1px solid #475569;
+            font-size: 0.95rem;
+            text-align: center;
+            pointer-events: none;
+            white-space: nowrap;
+        }
+        footer {
+            background-color: #1e293b;
+            padding: 12px 20px;
+            text-align: center;
+            font-size: 0.8rem;
+            color: #94a3b8;
+            border-top: 1px solid #334155;
+        }
+    </style>
+</head>
+<body>
+
+<header>
+    <h1>🇺🇦 Інтерактивна карта України</h1>
+    <p>Обери колір і натискай на області, щоб розфарбувати карту</p>
+</header>
+
+<div class="controls" id="controls">
+    <button class="color-btn active" style="background-color: #3b82f6;" data-color="#3b82f6" title="Синій"></button>
+    <button class="color-btn" style="background-color: #eab308;" data-color="#eab308" title="Жовтий"></button>
+    <button class="color-btn" style="background-color: #22c55e;" data-color="#22c55e" title="Зелений"></button>
+    <button class="color-btn" style="background-color: #ef4444;" data-color="#ef4444" title="Червоний"></button>
+    <button class="color-btn" style="background-color: #a855f7;" data-color="#a855f7" title="Фіолетовий"></button>
+    <button class="color-btn" style="background-color: #f97316;" data-color="#f97316" title="Помаранчевий"></button>
+    <button class="color-btn" style="background-color: #334155;" data-color="#334155" title="Стерти колір"></button>
+    <button class="action-btn" id="reset-btn">Очистити все</button>
+</div>
+
+<div id="map-container">
+    <div id="map"></div>
+    <div id="info-panel">Натисніть на будь-яку область</div>
+</div>
+
+<footer>
+    ⚠️ Неофіційний розважальний проєкт. Створено виключно для розваги та особистого використання. Автор: <strong>X1RR0</strong>.
+</footer>
+
+<script src="https://unpkg.com"></script>
+<script>
+    let selectedColor = '#3b82f6';
+    const defaultFill = '#334155';
+    const regionColors = {};
+    let geojsonLayer;
+
+    const map = L.map('map', {
+        zoomControl: true,
+        attributionControl: false
+    }).setView([48.5, 31.2], 6);
+
+    const infoPanel = document.getElementById('info-panel');
+
+    document.querySelectorAll('.color-btn').forEach(btn => {
+        btn.addEventListener('click', () => {
+            document.querySelectorAll('.color-btn').forEach(b => b.classList.remove('active'));
+            btn.classList.add('active');
+            selectedColor = btn.getAttribute('data-color');
+        });
+    });
+
+    document.getElementById('reset-btn').addEventListener('click', () => {
+        for (let key in regionColors) {
+            delete regionColors[key];
+        }
+        if (geojsonLayer) {
+            geojsonLayer.setStyle({
+                fillColor: defaultFill,
+                fillOpacity: 0.85
+            });
+        }
+        infoPanel.textContent = 'Карту очищено';
+    });
+
+    function getRegionName(props) {
+        return props.name_uk || props.NAME_1 || props.name || 'Область України';
+    }
+
+    function styleFeature(feature) {
+        const name = getRegionName(feature.properties);
+        return {
+            fillColor: regionColors[name] || defaultFill,
+            weight: 1.5,
+            opacity: 1,
+            color: '#94a3b8',
+            fillOpacity: 0.85
+        };
+    }
+
+    function onEachFeature(feature, layer) {
+        const name = getRegionName(feature.properties);
+
+        layer.on({
+            mouseover: function (e) {
+                const target = e.target;
+                target.setStyle({
+                    weight: 3,
+                    color: '#ffffff'
+                });
+                infoPanel.textContent = name;
+            },
+            mouseout: function (e) {
+                geojsonLayer.resetStyle(e.target);
+            },
+            click: function (e) {
+                regionColors[name] = selectedColor;
+                e.target.setStyle({
+                    fillColor: selectedColor,
+                    fillOpacity: 0.9
+                });
+                infoPanel.textContent = `Обрано: ${name}`;
+            }
+        });
+    }
+
+    fetch('https://githubusercontent.com')
+        .then(res => res.json())
+        .then(data => {
+            geojsonLayer = L.geoJSON(data, {
+                style: styleFeature,
+                onEachFeature: onEachFeature
+            }).addTo(map);
+            map.fitBounds(geojsonLayer.getBounds());
+        })
+        .catch(() => {
+            infoPanel.textContent = 'Помилка завантаження меж областей';
+        });
+</script>
+
+</body>
+</html>
+<!DOCTYPE html>
+<html lang="uk">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Інтерактивна карта областей України — X1RR0</title>
+    <link rel="stylesheet" href="https://unpkg.com" />
+    <style>
+        * {
+            box-sizing: border-box;
+            margin: 0;
+            padding: 0;
+            font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
+        }
+        body {
+            background-color: #0f172a;
+            color: #f8fafc;
+            display: flex;
+            flex-direction: column;
+            min-height: 100vh;
+        }
+        header {
+            background-color: #1e293b;
+            padding: 15px 20px;
+            text-align: center;
+            border-bottom: 1px solid #334155;
+        }
+        header h1 {
+            font-size: 1.4rem;
+            margin-bottom: 5px;
+        }
+        header p {
+            font-size: 0.9rem;
+            color: #94a3b8;
+        }
+        .controls {
+            display: flex;
+            flex-wrap: wrap;
+            justify-content: center;
+            align-items: center;
+            gap: 10px;
+            padding: 12px;
+            background-color: #1e293b;
+            border-bottom: 1px solid #334155;
+        }
+        .color-btn {
+            width: 32px;
+            height: 32px;
+            border-radius: 50%;
+            border: 3px solid transparent;
+            cursor: pointer;
+            transition: transform 0.15s;
+        }
+        .color-btn.active {
+            border-color: #ffffff;
+            transform: scale(1.15);
+        }
+        .action-btn {
+            padding: 8px 14px;
+            border: none;
+            border-radius: 8px;
+            background-color: #334155;
+            color: #f8fafc;
+            font-size: 0.85rem;
+            cursor: pointer;
+        }
+        .action-btn:hover {
+            background-color: #475569;
+        }
+        #map-container {
+            flex: 1;
+            position: relative;
+            width: 100%;
+            min-height: 500px;
+        }
+        #map {
+            width: 100%;
+            height: 100%;
+            min-height: 500px;
+            background-color: #0f172a;
+        }
+        #info-panel {
+            position: absolute;
+            bottom: 20px;
+            left: 50%;
+            transform: translateX(-50%);
+            z-index: 1000;
+            background: rgba(30, 41, 59, 0.92);
+            padding: 10px 18px;
+            border-radius: 12px;
+            border: 1px solid #475569;
+            font-size: 0.95rem;
+            text-align: center;
+            pointer-events: none;
+            white-space: nowrap;
+        }
+        footer {
+            background-color: #1e293b;
+            padding: 12px 20px;
+            text-align: center;
+            font-size: 0.8rem;
+            color: #94a3b8;
+            border-top: 1px solid #334155;
+        }
+    </style>
+</head>
+<body>
+
+<header>
+    <h1>🇺🇦 Інтерактивна карта України</h1>
+    <p>Обери колір і натискай на області, щоб розфарбувати карту</p>
+</header>
+
+<div class="controls" id="controls">
+    <button class="color-btn active" style="background-color: #3b82f6;" data-color="#3b82f6" title="Синій"></button>
+    <button class="color-btn" style="background-color: #eab308;" data-color="#eab308" title="Жовтий"></button>
+    <button class="color-btn" style="background-color: #22c55e;" data-color="#22c55e" title="Зелений"></button>
+    <button class="color-btn" style="background-color: #ef4444;" data-color="#ef4444" title="Червоний"></button>
+    <button class="color-btn" style="background-color: #a855f7;" data-color="#a855f7" title="Фіолетовий"></button>
+    <button class="color-btn" style="background-color: #f97316;" data-color="#f97316" title="Помаранчевий"></button>
+    <button class="color-btn" style="background-color: #334155;" data-color="#334155" title="Стерти колір"></button>
+    <button class="action-btn" id="reset-btn">Очистити все</button>
+</div>
+
+<div id="map-container">
+    <div id="map"></div>
+    <div id="info-panel">Натисніть на будь-яку область</div>
+</div>
+
+<footer>
+    ⚠️ Неофіційний розважальний проєкт. Створено виключно для розваги та особистого використання. Автор: <strong>X1RR0</strong>.
+</footer>
+
+<script src="https://unpkg.com"></script>
+<script>
+    let selectedColor = '#3b82f6';
+    const defaultFill = '#334155';
+    const regionColors = {};
+    let geojsonLayer;
+
+    const map = L.map('map', {
+        zoomControl: true,
+        attributionControl: false
+    }).setView([48.5, 31.2], 6);
+
+    const infoPanel = document.getElementById('info-panel');
+
+    document.querySelectorAll('.color-btn').forEach(btn => {
+        btn.addEventListener('click', () => {
+            document.querySelectorAll('.color-btn').forEach(b => b.classList.remove('active'));
+            btn.classList.add('active');
+            selectedColor = btn.getAttribute('data-color');
+        });
+    });
+
+    document.getElementById('reset-btn').addEventListener('click', () => {
+        for (let key in regionColors) {
+            delete regionColors[key];
+        }
+        if (geojsonLayer) {
+            geojsonLayer.setStyle({
+                fillColor: defaultFill,
+                fillOpacity: 0.85
+            });
+        }
+        infoPanel.textContent = 'Карту очищено';
+    });
+
+    function getRegionName(props) {
+        return props.name_uk || props.NAME_1 || props.name || 'Область України';
+    }
+
+    function styleFeature(feature) {
+        const name = getRegionName(feature.properties);
+        return {
+            fillColor: regionColors[name] || defaultFill,
+            weight: 1.5,
+            opacity: 1,
+            color: '#94a3b8',
+            fillOpacity: 0.85
+        };
+    }
+
+    function onEachFeature(feature, layer) {
+        const name = getRegionName(feature.properties);
+
+        layer.on({
+            mouseover: function (e) {
+                const target = e.target;
+                target.setStyle({
+                    weight: 3,
+                    color: '#ffffff'
+                });
+                infoPanel.textContent = name;
+            },
+            mouseout: function (e) {
+                geojsonLayer.resetStyle(e.target);
+            },
+            click: function (e) {
+                regionColors[name] = selectedColor;
+                e.target.setStyle({
+                    fillColor: selectedColor,
+                    fillOpacity: 0.9
+                });
+                infoPanel.textContent = `Обрано: ${name}`;
+            }
+        });
+    }
+
+    fetch('https://githubusercontent.com')
+        .then(res => res.json())
+        .then(data => {
+            geojsonLayer = L.geoJSON(data, {
+                style: styleFeature,
+                onEachFeature: onEachFeature
+            }).addTo(map);
+            map.fitBounds(geojsonLayer.getBounds());
+        })
+        .catch(() => {
+            infoPanel.textContent = 'Помилка завантаження меж областей';
+        });
+</script>
+
+</body>
+</html>
+<!DOCTYPE html>
+<html lang="uk">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Інтерактивна карта областей України — X1RR0</title>
+    <link rel="stylesheet" href="https://unpkg.com" />
+    <style>
+        * {
+            box-sizing: border-box;
+            margin: 0;
+            padding: 0;
+            font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
+        }
+        body {
+            background-color: #0f172a;
+            color: #f8fafc;
+            display: flex;
+            flex-direction: column;
+            min-height: 100vh;
+        }
+        header {
+            background-color: #1e293b;
+            padding: 15px 20px;
+            text-align: center;
+            border-bottom: 1px solid #334155;
+        }
+        header h1 {
+            font-size: 1.4rem;
+            margin-bottom: 5px;
+        }
+        header p {
+            font-size: 0.9rem;
+            color: #94a3b8;
+        }
+        .controls {
+            display: flex;
+            flex-wrap: wrap;
+            justify-content: center;
+            align-items: center;
+            gap: 10px;
+            padding: 12px;
+            background-color: #1e293b;
+            border-bottom: 1px solid #334155;
+        }
+        .color-btn {
+            width: 32px;
+            height: 32px;
+            border-radius: 50%;
+            border: 3px solid transparent;
+            cursor: pointer;
+            transition: transform 0.15s;
+        }
+        .color-btn.active {
+            border-color: #ffffff;
+            transform: scale(1.15);
+        }
+        .action-btn {
+            padding: 8px 14px;
+            border: none;
+            border-radius: 8px;
+            background-color: #334155;
+            color: #f8fafc;
+            font-size: 0.85rem;
+            cursor: pointer;
+        }
+        .action-btn:hover {
+            background-color: #475569;
+        }
+        #map-container {
+            flex: 1;
+            position: relative;
+            width: 100%;
+            min-height: 500px;
+        }
+        #map {
+            width: 100%;
+            height: 100%;
+            min-height: 500px;
+            background-color: #0f172a;
+        }
+        #info-panel {
+            position: absolute;
+            bottom: 20px;
+            left: 50%;
+            transform: translateX(-50%);
+            z-index: 1000;
+            background: rgba(30, 41, 59, 0.92);
+            padding: 10px 18px;
+            border-radius: 12px;
+            border: 1px solid #475569;
+            font-size: 0.95rem;
+            text-align: center;
+            pointer-events: none;
+            white-space: nowrap;
+        }
+        footer {
+            background-color: #1e293b;
+            padding: 12px 20px;
+            text-align: center;
+            font-size: 0.8rem;
+            color: #94a3b8;
+            border-top: 1px solid #334155;
+        }
+    </style>
+</head>
+<body>
+
+<header>
+    <h1>🇺🇦 Інтерактивна карта України</h1>
+    <p>Обери колір і натискай на області, щоб розфарбувати карту</p>
+</header>
+
+<div class="controls" id="controls">
+    <button class="color-btn active" style="background-color: #3b82f6;" data-color="#3b82f6" title="Синій"></button>
+    <button class="color-btn" style="background-color: #eab308;" data-color="#eab308" title="Жовтий"></button>
+    <button class="color-btn" style="background-color: #22c55e;" data-color="#22c55e" title="Зелений"></button>
+    <button class="color-btn" style="background-color: #ef4444;" data-color="#ef4444" title="Червоний"></button>
+    <button class="color-btn" style="background-color: #a855f7;" data-color="#a855f7" title="Фіолетовий"></button>
+    <button class="color-btn" style="background-color: #f97316;" data-color="#f97316" title="Помаранчевий"></button>
+    <button class="color-btn" style="background-color: #334155;" data-color="#334155" title="Стерти колір"></button>
+    <button class="action-btn" id="reset-btn">Очистити все</button>
+</div>
+
+<div id="map-container">
+    <div id="map"></div>
+    <div id="info-panel">Натисніть на будь-яку область</div>
+</div>
+
+<footer>
+    ⚠️ Неофіційний розважальний проєкт. Створено виключно для розваги та особистого використання. Автор: <strong>X1RR0</strong>.
+</footer>
+
+<script src="https://unpkg.com"></script>
+<script>
+    let selectedColor = '#3b82f6';
+    const defaultFill = '#334155';
+    const regionColors = {};
+    let geojsonLayer;
+
+    const map = L.map('map', {
+        zoomControl: true,
+        attributionControl: false
+    }).setView([48.5, 31.2], 6);
+
+    const infoPanel = document.getElementById('info-panel');
+
+    document.querySelectorAll('.color-btn').forEach(btn => {
+        btn.addEventListener('click', () => {
+            document.querySelectorAll('.color-btn').forEach(b => b.classList.remove('active'));
+            btn.classList.add('active');
+            selectedColor = btn.getAttribute('data-color');
+        });
+    });
+
+    document.getElementById('reset-btn').addEventListener('click', () => {
+        for (let key in regionColors) {
+            delete regionColors[key];
+        }
+        if (geojsonLayer) {
+            geojsonLayer.setStyle({
+                fillColor: defaultFill,
+                fillOpacity: 0.85
+            });
+        }
+        infoPanel.textContent = 'Карту очищено';
+    });
+
+    function getRegionName(props) {
+        return props.name_uk || props.NAME_1 || props.name || 'Область України';
+    }
+
+    function styleFeature(feature) {
+        const name = getRegionName(feature.properties);
+        return {
+            fillColor: regionColors[name] || defaultFill,
+            weight: 1.5,
+            opacity: 1,
+            color: '#94a3b8',
+            fillOpacity: 0.85
+        };
+    }
+
+    function onEachFeature(feature, layer) {
+        const name = getRegionName(feature.properties);
+
+        layer.on({
+            mouseover: function (e) {
+                const target = e.target;
+                target.setStyle({
+                    weight: 3,
+                    color: '#ffffff'
+                });
+                infoPanel.textContent = name;
+            },
+            mouseout: function (e) {
+                geojsonLayer.resetStyle(e.target);
+            },
+            click: function (e) {
+                regionColors[name] = selectedColor;
+                e.target.setStyle({
+                    fillColor: selectedColor,
+                    fillOpacity: 0.9
+                });
+                infoPanel.textContent = `Обрано: ${name}`;
+            }
+        });
+    }
+
+    fetch('https://githubusercontent.com')
+        .then(res => res.json())
+        .then(data => {
+            geojsonLayer = L.geoJSON(data, {
+                style: styleFeature,
+                onEachFeature: onEachFeature
+            }).addTo(map);
+            map.fitBounds(geojsonLayer.getBounds());
+     <!DOCTYPE html>
+<html lang="uk">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Інтерактивна карта областей України — X1RR0</title>
+    <link rel="stylesheet" href="https://unpkg.com" />
+    <style>
+        * {
+            box-sizing: border-box;
+            margin: 0;
+            padding: 0;
+            font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
+        }
+        body {
+            background-color: #0f172a;
+            color: #f8fafc;
+            display: flex;
+            flex-direction: column;
+            min-height: 100vh;
+        }
+        header {
+            background-color: #1e293b;
+            padding: 15px 20px;
+            text-align: center;
+            border-bottom: 1px solid #334155;
+        }
+        header h1 {
+            font-size: 1.4rem;
+            margin-bottom: 5px;
+        }
+        header p {
+            font-size: 0.9rem;
+            color: #94a3b8;
+        }
+        .controls {
+            display: flex;
+            flex-wrap: wrap;
+            justify-content: center;
+            align-items: center;
+            gap: 10px;
+            padding: 12px;
+            background-color: #1e293b;
+            border-bottom: 1px solid #334155;
+        }
+        .color-btn {
+            width: 32px;
+            height: 32px;
+            border-radius: 50%;
+            border: 3px solid transparent;
+            cursor: pointer;
+            transition: transform 0.15s;
+        }
+        .color-btn.active {
+            border-color: #ffffff;
+            transform: scale(1.15);
+        }
+        .action-btn {
+            padding: 8px 14px;
+            border: none;
+            border-radius: 8px;
+            background-color: #334155;
+            color: #f8fafc;
+            font-size: 0.85rem;
+            cursor: pointer;
+        }
+        .action-btn:hover {
+            background-color: #475569;
+        }
+        #map-container {
+            flex: 1;
+            position: relative;
+            width: 100%;
+            min-height: 500px;
+        }
+        #map {
+            width: 100%;
+            height: 100%;
+            min-height: 500px;
+            background-color: #0f172a;
+        }
+        #info-panel {
+            position: absolute;
+            bottom: 20px;
+            left: 50%;
+            transform: translateX(-50%);
+            z-index: 1000;
+            background: rgba(30, 41, 59, 0.92);
+            padding: 10px 18px;
+            border-radius: 12px;
+            border: 1px solid #475569;
+            font-size: 0.95rem;
+            text-align: center;
+            pointer-events: none;
+            white-space: nowrap;
+        }
+        footer {
+            background-color: #1e293b;
+            padding: 12px 20px;
+            text-align: center;
+            font-size: 0.8rem;
+            color: #94a3b8;
+            border-top: 1px solid #334155;
+        }
+    </style>
+</head>
+<body>
+
+<header>
+    <h1>🇺🇦 Інтерактивна карта України</h1>
+    <p>Обери колір і натискай на області, щоб розфарбувати карту</p>
+</header>
+
+<div class="controls" id="controls">
+    <button class="color-btn active" style="background-color: #3b82f6;" data-color="#3b82f6" title="Синій"></button>
+    <button class="color-btn" style="background-color: #eab308;" data-color="#eab308" title="Жовтий"></button>
+    <button class="color-btn" style="background-color: #22c55e;" data-color="#22c55e" title="Зелений"></button>
+    <button class="color-btn" style="background-color: #ef4444;" data-color="#ef4444" title="Червоний"></button>
+    <button class="color-btn" style="background-color: #a855f7;" data-color="#a855f7" title="Фіолетовий"></button>
+    <button class="color-btn" style="background-color: #f97316;" data-color="#f97316" title="Помаранчевий"></button>
+    <button class="color-btn" style="background-color: #334155;" data-color="#334155" title="Стерти колір"></button>
+    <button class="action-btn" id="reset-btn">Очистити все</button>
+</div>
+
+<div id="map-container">
+    <div id="map"></div>
+    <div id="info-panel">Натисніть на будь-яку область</div>
+</div>
+
+<footer>
+    ⚠️ Неофіційний розважальний проєкт. Створено виключно для розваги та особистого використання. Автор: <strong>X1RR0</strong>.
+</footer>
+
+<script src="https://unpkg.com"></script>
+<script>
+    let selectedColor = '#3b82f6';
+    const defaultFill = '#334155';
+    const regionColors = {};
+    let geojsonLayer;
+
+    const map = L.map('map', {
+        zoomControl: true,
+        attributionControl: false
+    }).setView([48.5, 31.2], 6);
+
+    const infoPanel = document.getElementById('info-panel');
+
+    document.querySelectorAll('.color-btn').forEach(btn => {
+        btn.addEventListener('click', () => {
+            document.querySelectorAll('.color-btn').forEach(b => b.classList.remove('active'));
+            btn.classList.add('active');
+            selectedColor = btn.getAttribute('data-color');
+        });
+    });
+
+    document.getElementById('reset-btn').addEventListener('click', () => {
+        for (let key in regionColors) {
+            delete regionColors[key];
+        }
+        if (geojsonLayer) {
+            geojsonLayer.setStyle({
+                fillColor: defaultFill,
+                fillOpacity: 0.85
+            });
+        }
+        infoPanel.textContent = 'Карту очищено';
+    });
+
+    function getRegionName(props) {
+        return props.name_uk || props.NAME_1 || props.name || 'Область України';
+    }
+
+    function styleFeature(feature) {
+        const name = getRegionName(feature.properties);
+        return {
+            fillColor: regionColors[name] || defaultFill,
+            weight: 1.5,
+            opacity: 1,
+            color: '#94a3b8',
+            fillOpacity: 0.85
+        };
+    }
+
+    function onEachFeature(feature, layer) {
+        const name = getRegionName(feature.properties);
+
+        layer.on({
+            mouseover: function (e) {
+                const target = e.target;
+                target.setStyle({
+                    weight: 3,
+                    color: '#ffffff'
+                });
+                infoPanel.textContent = name;
+            },
+            mouseout: function (e) {
+                geojsonLayer.resetStyle(e.target);
+            },
+            click: function (e) {
+                regionColors[name] = selectedColor;
+                e.target.setStyle({
+                    fillColor: selectedColor,
+                    fillOpacity: 0.9
+                });
+                infoPanel.textContent = `Обрано: ${name}`;
+            }
+        });
+    }
+
+    fetch('https://githubusercontent.com')
+        .then(res => res.json())
+        .then(data => {
+            geojsonLayer = L.geoJSON(data, {
+                style: styleFeature,
+                onEachFeature: onEachFeature
+            }).addTo(map);
+            map.fitBounds(geojsonLayer.getBounds());
+        })
+        .catch(() => {
+            infoPanel.textContent = 'Помилка завантаження меж областей';
+        });
+</script>
+
+</body>
+</html>
+   })
+        .catch(() => {
+            infoPanel.textContent = 'Помилка завантаження меж областей';
+        });
+</script>
+
+</body>
+</html>
