@@ -1,4 +1,4 @@
-
+<!DOCTYPE html>
 <html lang="uk">
 <head>
     <meta charset="UTF-8">
@@ -312,5 +312,3 @@
         for (let key in regionState) {
             delete regionState[key];
         }
-        regionLayers.forEach(item => {
-            item.layer.setStyle({
