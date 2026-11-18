@@ -1,0 +1,268 @@
+<!DOCTYPE html>
+<html lang="uk">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+    <title>Інтерактивна карта України — X1RR0</title>
+    <style>
+        * {
+            box-sizing: border-box;
+            margin: 0;
+            padding: 0;
+            font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
+            user-select: none;
+        }
+        body {
+            background-color: #121212;
+            color: #f8fafc;
+            display: flex;
+            flex-direction: column;
+            height: 100vh;
+            overflow: hidden;
+        }
+
+        /* Чорний вступний екран */
+        #intro-screen {
+            position: fixed;
+            inset: 0;
+            background-color: #000000;
+            z-index: 9000;
+            display: flex;
+            justify-content: center;
+            align-items: center;
+            padding: 24px;
+            text-align: center;
+            transition: opacity 0.8s ease;
+        }
+        #intro-screen.hidden {
+            opacity: 0;
+            pointer-events: none;
+        }
+        #intro-text {
+            font-size: clamp(1.5rem, 5.5vw, 2.8rem);
+            font-weight: 700;
+            color: #ffffff;
+            opacity: 0;
+            filter: blur(0px);
+            transform: scale(0.95);
+            transition: opacity 1.5s ease, filter 1.4s ease, transform 1.5s ease;
+        }
+        #intro-text.visible {
+            opacity: 1;
+            transform: scale(1);
+        }
+        #intro-text.blur-out {
+            opacity: 0;
+            filter: blur(18px);
+            transform: scale(1.08);
+        }
+
+        /* Кнопка пропуску */
+        #skip-btn {
+            position: fixed;
+            bottom: 24px;
+            right: 20px;
+            z-index: 9999;
+            padding: 10px 18px;
+            background: rgba(30, 30, 30, 0.9);
+            color: #ffffff;
+            border: 1px solid #444;
+            border-radius: 999px;
+            font-size: 0.88rem;
+            font-weight: 600;
+            cursor: pointer;
+        }
+        #skip-btn.hidden {
+            display: none;
+        }
+
+        /* Верхня панель */
+        header {
+            background-color: #18181b;
+            padding: 12px 16px;
+            text-align: center;
+            border-bottom: 1px solid #27272a;
+            z-index: 10;
+        }
+        header h1 {
+            font-size: 1.15rem;
+            margin-bottom: 4px;
+        }
+        .legend {
+            display: flex;
+            flex-wrap: wrap;
+            justify-content: center;
+            gap: 6px;
+            padding: 8px;
+            background-color: #18181b;
+            border-bottom: 1px solid #27272a;
+            font-size: 0.72rem;
+            z-index: 10;
+        }
+        .badge {
+            display: inline-flex;
+            align-items: center;
+            gap: 4px;
+            background: #27272a;
+            padding: 3px 7px;
+            border-radius: 6px;
+        }
+        .dot {
+            width: 9px;
+            height: 9px;
+            border-radius: 50%;
+        }
+        .reset-btn {
+            background: #3f3f46;
+            color: #fff;
+            border: none;
+            padding: 3px 9px;
+            border-radius: 6px;
+            font-size: 0.72rem;
+            cursor: pointer;
+        }
+
+        /* Контейнер карти з камерою */
+        #viewport {
+            flex: 1;
+            position: relative;
+            width: 100%;
+            overflow: hidden;
+            display: flex;
+            justify-content: center;
+            align-items: center;
+            background-color: #121212;
+        }
+        #camera {
+            width: 100%;
+            height: 100%;
+            display: flex;
+            justify-content: center;
+            align-items: center;
+            transition: transform 0.6s cubic-bezier(0.25, 1, 0.5, 1);
+            transform-origin: center center;
+        }
+        svg {
+            width: 96%;
+            height: 96%;
+            max-width: 950px;
+            max-height: 650px;
+        }
+        .region {
+            fill: #27272a;
+            stroke: #121212;
+            stroke-width: 1.8;
+            stroke-linejoin: round;
+            cursor: pointer;
+            opacity: 0;
+            transition: fill 0.25s ease, opacity 0.45s ease;
+        }
+        .region.shown {
+            opacity: 1;
+        }
+        .region-label {
+            fill: #d4d4d8;
+            font-size: 11px;
+            font-weight: 500;
+            text-anchor: middle;
+            pointer-events: none;
+            opacity: 0;
+            transition: opacity 0.45s ease;
+        }
+        .region-label.shown {
+            opacity: 1;
+        }
+
+        /* Плашка статусу */
+        #status-pill {
+            position: absolute;
+            bottom: 16px;
+            left: 50%;
+            transform: translateX(-50%);
+            background: rgba(24, 24, 27, 0.92);
+            border: 1px solid #3f3f46;
+            padding: 8px 16px;
+            border-radius: 999px;
+            font-size: 0.85rem;
+            white-space: nowrap;
+            pointer-events: none;
+        }
+    </style>
+</head>
+<body>
+
+<div id="intro-screen">
+    <div id="intro-text">Інтерактивна карта України від :X1RR0</div>
+</div>
+
+<button id="skip-btn">Пропустити анімацію ⏭</button>
+
+<header>
+    <h1>Інтерактивна карта України</h1>
+</header>
+
+<div class="legend">
+    <span class="badge"><span class="dot" style="background:#eab308"></span>1. Жовта</span>
+    <span class="badge"><span class="dot" style="background:#dc2626"></span>2. Червона</span>
+    <span class="badge"><span class="dot" style="background:#7f1d1d"></span>3. Темно-червона</span>
+    <span class="badge"><span class="dot" style="background:#ea580c"></span>4. Оранжева</span>
+    <span class="badge"><span class="dot" style="background:#16a34a"></span>5. Зелена</span>
+    <span class="badge"><span class="dot" style="background:#9333ea"></span>6. Фіолетова</span>
+    <span class="badge"><span class="dot" style="background:#854d0e"></span>7. Темно-жовта</span>
+    <button class="reset-btn" id="reset-btn">Скинути</button>
+</div>
+
+<div id="viewport">
+    <div id="camera">
+        <svg id="ukraine-map" viewBox="0 0 800 540">
+            <!-- Області у стилі темної карти -->
+            <g id="regions-group"></g>
+            <g id="labels-group"></g>
+        </svg>
+    </div>
+    <div id="status-pill">Підготовка карти...</div>
+</div>
+
+<script>
+    const colors = [
+        { name: 'Сірий', hex: '#27272a' },
+        { name: 'Жовта', hex: '#eab308' },
+        { name: 'Червона', hex: '#dc2626' },
+        { name: 'Темно-червона', hex: '#7f1d1d' },
+        { name: 'Оранжева', hex: '#ea580c' },
+        { name: 'Зелена', hex: '#16a34a' },
+        { name: 'Фіолетова', hex: '#9333ea' },
+        { name: 'Темно-жовта', hex: '#854d0e' }
+    ];
+
+    // Порядок появи: спочатку Київ, потім Одеса, далі всі інші області
+    const oblastsData = [
+        { id: 'kyiv', name: 'Київська', x: 375, y: 145, d: 'M345,105 L405,100 L420,150 L405,195 L350,190 L335,145 Z' },
+        { id: 'odesa', name: 'Одеська', x: 345, y: 390, d: 'M315,335 L385,330 L395,385 L340,455 L295,450 L310,395 Z' },
+        { id: 'zhytomyr', name: 'Житомирська', x: 285, y: 140, d: 'M245,95 L345,105 L335,145 L350,190 L265,195 L245,150 Z' },
+        { id: 'vinnytsia', name: 'Вінницька', x: 295, y: 255, d: 'M250,205 L345,195 L365,255 L345,315 L265,310 L245,260 Z' },
+        { id: 'cherkasy', name: 'Черкаська', x: 415, y: 225, d: 'M355,195 L455,185 L475,235 L425,265 L365,255 Z' },
+        { id: 'chernihiv', name: 'Чернігівська', x: 445, y: 105, d: 'M395,55 L495,55 L505,145 L420,150 L405,100 Z' },
+        { id: 'sumy', name: 'Сумська', x: 545, y: 115, d: 'M495,55 L590,75 L605,165 L515,170 L505,145 Z' },
+        { id: 'poltava', name: 'Полтавська', x: 515, y: 205, d: 'M455,175 L575,170 L585,235 L485,245 L475,235 Z' },
+        { id: 'kirovohrad', name: 'Кіровоградська', x: 445, y: 285, d: 'M365,255 L485,245 L515,305 L395,320 L355,300 Z' },
+        { id: 'mykolaiv', name: 'Миколаївська', x: 415, y: 365, d: 'M385,320 L465,315 L475,390 L395,395 Z' },
+        { id: 'kherson', name: 'Херсонська', x: 495, y: 405, d: 'M465,365 L565,365 L575,435 L475,435 Z' },
+        { id: 'crimea', name: 'АР Крим', x: 525, y: 485, d: 'M485,445 L585,455 L575,515 L480,510 Z' },
+        { id: 'dnipro', name: 'Дніпропетровська', x: 565, y: 285, d: 'M495,245 L625,245 L635,325 L515,325 Z' },
+        { id: 'zaporizhzhia', name: 'Запорізька', x: 595, y: 365, d: 'M545,325 L645,325 L645,405 L565,405 Z' },
+        { id: 'kharkiv', name: 'Харківська', x: 635, y: 195, d: 'M575,165 L695,165 L705,245 L585,245 Z' },
+        { id: 'luhansk', name: 'Луганська', x: 735, y: 235, d: 'M695,175 L780,195 L775,295 L695,285 Z' },
+        { id: 'donetsk', name: 'Донецька', x: 685, y: 315, d: 'M635,255 L715,265 L710,375 L645,375 Z' },
+        { id: 'rivne', name: 'Рівненська', x: 205, y: 130, d: 'M165,85 L245,95 L245,165 L175,175 Z' },
+        { id: 'volyn', name: 'Волинська', x: 125, y: 125, d: 'M75,85 L165,85 L175,165 L85,165 Z' },
+        { id: 'khmelnytskyi', name: 'Хмельницька', x: 225, y: 225, d: 'M185,175 L250,175 L255,285 L195,285 Z' },
+        { id: 'ternopil', name: 'Тернопільська', x: 165, y: 235, d: 'M135,185 L185,185 L195,285 L140,285 Z' },
+        { id: 'lviv', name: 'Львівська', x: 95, y: 215, d: 'M45,165 L135,175 L140,265 L55,255 Z' },
+        { id: 'ivano', name: 'Ів.-Франківська', x: 115, y: 295, d: 'M85,260 L145,270 L140,340 L90,330 Z' },
+        { id: 'zakarpattia', name: 'Закарпатська', x: 55, y: 315, d: 'M15,285 L85,285 L85,345 L20,335 Z' },
+        { id: 'chernivtsi', name: 'Чернівецька', x: 185, y: 310, d: 'M145,290 L245,290 L245,325 L145,325 Z' }
+    ];
+
+    const state = {};
+    const regionsGroup = document.getElementById('regions-group');
